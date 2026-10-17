@@ -97,7 +97,8 @@ class SettingsViewModel(
             connection = connection,
             cacheStats = cacheStats,
             syncing = syncing,
-            loading = false
+            loading = false,
+            hasStoredCredentials = settingsRepository.hasStoredTelegramCredentials()
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 

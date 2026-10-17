@@ -50,6 +50,14 @@ class OnboardingViewModel(
         telegramAuthRepository.authState
             .onEach(::onAuthStateChanged)
             .launchIn(viewModelScope)
+
+        // Setup was skipped earlier, so opening onboarding again means configuring the API.
+        viewModelScope.launch {
+            val prefs = settingsRepository.preferences.first()
+            if (prefs.onboardingComplete && !settingsRepository.hasStoredTelegramCredentials()) {
+                _uiState.update { it.copy(step = OnboardingStep.API_CREDENTIALS) }
+            }
+        }
     }
 
     private fun onAuthStateChanged(state: TelegramAuthState) {
@@ -139,6 +147,61 @@ class OnboardingViewModel(
 
     fun start() {
         _uiState.update { it.copy(step = OnboardingStep.API_CREDENTIALS, error = null) }
+    }
+
+    /** Leaves setup untouched and opens the app; everything stays configurable later. */
+    fun skip() {
+        if (_uiState.value.finishing) return
+        viewModelScope.launch {
+            settingsRepository.update { it.copy(onboardingComplete = true) }
+            _uiState.update { it.copy(step = OnboardingStep.DONE) }
+        }
+    }
+
+    fun back() {
+        val state = _uiState.value
+        if (state.working || state.finishing) return
+        when (state.step) {
+            OnboardingStep.API_CREDENTIALS ->
+                _uiState.update { it.copy(step = OnboardingStep.WELCOME, error = null) }
+
+            OnboardingStep.PHONE -> if (state.qrMode) {
+                cancelQrLogin()
+            } else {
+                _uiState.update { it.copy(step = OnboardingStep.API_CREDENTIALS, error = null) }
+            }
+
+            OnboardingStep.EMAIL_ADDRESS,
+            OnboardingStep.EMAIL_CODE,
+            OnboardingStep.CODE,
+            OnboardingStep.PASSWORD -> backToPhone()
+
+            OnboardingStep.BACKUP_SETUP ->
+                _uiState.update { it.copy(step = OnboardingStep.CHANNEL_SELECT) }
+
+            else -> Unit
+        }
+    }
+
+    /**
+     * TDLib only accepts a phone number from a fresh session, so leaving the code steps restarts
+     * authentication rather than just swapping the screen.
+     */
+    private fun backToPhone() {
+        _uiState.update {
+            it.copy(
+                step = OnboardingStep.PHONE,
+                working = true,
+                error = null,
+                qrMode = false,
+                qrLink = null,
+                registrationRequired = false
+            )
+        }
+        viewModelScope.launch {
+            telegramAuthRepository.restartAuthentication()
+            _uiState.update { it.copy(working = false) }
+        }
     }
 
     fun submitCredentials(apiIdText: String, apiHash: String) {

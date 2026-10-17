@@ -1,6 +1,6 @@
 <resources>
     <!-- App-wide -->
-    <string name="app_name">TeleDrive</string>
+    <string name="app_name">TeleDrive CN</string>
     <string name="app_backed_up">已备份</string>
     <string name="app_drive_recreated">你的云端硬盘在 Telegram 中已被删除，因此创建了一个新的空硬盘</string>
     <string name="app_no_results">无结果</string>
@@ -115,6 +115,15 @@
     <string name="date_today">今天</string>
     <string name="date_yesterday">昨天</string>
 
+    <!-- Folder changes -->
+    <string name="folder_changes_added">%1$d 个新增</string>
+    <string name="folder_changes_changed">%1$d 个修改</string>
+    <string name="folder_changes_deleted">%1$d 个删除</string>
+    <string name="folder_changes_later">稍后</string>
+    <string name="folder_changes_message">请选择要同步的文件夹。本地已删除的文件会移入回收站，新增或修改的文件会自动上传。</string>
+    <string name="folder_changes_sync_selected">同步所选</string>
+    <string name="folder_changes_title">检测到文件夹变更</string>
+
     <!-- App lock -->
     <string name="lock_no_screen_lock">此设备不支持屏幕锁定，正在解锁。</string>
     <string name="lock_prompt_title">解锁 TeleDrive</string>
@@ -127,6 +136,7 @@
 
     <!-- Onboarding flow -->
     <string name="onboarding_action_continue">继续</string>
+    <string name="onboarding_back">返回</string>
     <string name="onboarding_continue">继续</string>
     <string name="onboarding_continue_without">暂不设置</string>
     <string name="onboarding_files_live_own_private">你的文件存放在你自己的 Telegram 私密频道中。你的账号、你的存储空间，由你掌控。</string>
@@ -134,6 +144,7 @@
     <string name="onboarding_got">知道了</string>
     <string name="onboarding_opening">正在打开</string>
     <string name="onboarding_sign">登录</string>
+    <string name="onboarding_skip">跳过</string>
     <string name="onboarding_step">onboarding-step</string>
     <string name="onboarding_step_counter">第 %1$d 步，共 %2$d 步</string>
     <string name="onboarding_verify">验证</string>
@@ -601,6 +612,8 @@
     <string name="settings_back_new_media_instantly">立即备份新的媒体文件</string>
     <string name="settings_backup_folders_title">备份文件夹</string>
     <string name="settings_backup_interval">备份间隔</string>
+    <string name="settings_folder_change_sync">询问是否同步文件夹变更</string>
+    <string name="settings_folder_change_sync_summary">打开应用时，列出内容发生变化的备份文件夹，并让你选择要同步的文件夹。</string>
     <string name="settings_folder_unreadable">无法直接读取该文件夹</string>
     <string name="settings_no_folders_selected">未选择任何文件夹，因此文件夹备份不会执行。从“文件”手动上传不受影响。</string>
     <string name="settings_only_charging">仅在充电时</string>

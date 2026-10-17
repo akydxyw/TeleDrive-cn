@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -58,6 +59,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LocalContentColor
@@ -129,6 +131,7 @@ import com.drdisagree.teledrive.resources.onboarding_allow_media
 import com.drdisagree.teledrive.resources.onboarding_api_access
 import com.drdisagree.teledrive.resources.onboarding_api_hash
 import com.drdisagree.teledrive.resources.onboarding_api_id
+import com.drdisagree.teledrive.resources.onboarding_back
 import com.drdisagree.teledrive.resources.onboarding_channel_files_in_channel
 import com.drdisagree.teledrive.resources.onboarding_choose_api_dev_tools
 import com.drdisagree.teledrive.resources.onboarding_choose_country
@@ -198,6 +201,7 @@ import com.drdisagree.teledrive.resources.onboarding_send_code
 import com.drdisagree.teledrive.resources.onboarding_set_up_proxy
 import com.drdisagree.teledrive.resources.onboarding_sign
 import com.drdisagree.teledrive.resources.onboarding_single_drive_desc
+import com.drdisagree.teledrive.resources.onboarding_skip
 import com.drdisagree.teledrive.resources.onboarding_step
 import com.drdisagree.teledrive.resources.onboarding_step_counter
 import com.drdisagree.teledrive.resources.onboarding_storage_access
@@ -240,6 +244,9 @@ fun OnboardingScreen(
             Spacer(Modifier.height(20.dp))
             StepHeader(
                 step = state.step,
+                showBack = state.canGoBack,
+                backEnabled = !state.working && !state.finishing,
+                onBack = viewModel::back,
                 modifier = Modifier.padding(horizontal = PAGE_PADDING)
             )
             BoxWithConstraints(modifier = Modifier.weight(1f)) {
@@ -271,10 +278,14 @@ fun OnboardingScreen(
                         label = stringResource(Res.string.onboarding_step)
                     ) { step ->
                         when (step) {
-                            OnboardingStep.WELCOME -> WelcomeStep(onContinue = viewModel::start)
+                            OnboardingStep.WELCOME -> WelcomeStep(
+                                onContinue = viewModel::start,
+                                onSkip = viewModel::skip
+                            )
                             OnboardingStep.API_CREDENTIALS -> CredentialsStep(
                                 working = state.working,
                                 error = state.error,
+                                onOpenProxy = onOpenProxy,
                                 onSubmit = viewModel::submitCredentials
                             )
 
@@ -472,7 +483,13 @@ private fun ChannelSelectStep(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun StepHeader(step: OnboardingStep, modifier: Modifier = Modifier) {
+private fun StepHeader(
+    step: OnboardingStep,
+    showBack: Boolean,
+    backEnabled: Boolean,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val capabilities = LocalPlatformCapabilities.current
     val counted = OnboardingStep.counted(
         includePermissions = capabilities.requiresPermissions,
@@ -480,17 +497,33 @@ private fun StepHeader(step: OnboardingStep, modifier: Modifier = Modifier) {
     )
     val stepNumber = step.displayNumber(counted)
     val totalSteps = counted.size
-    Column(modifier = modifier.semantics(mergeDescendants = true) {}) {
-        Surface(
-            shape = RoundedCornerShape(100),
-            color = MaterialTheme.colorScheme.secondaryContainer
-        ) {
-            Text(
-                text = stringResource(Res.string.onboarding_step_counter, stepNumber, totalSteps),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-            )
+    Column(modifier = modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                shape = RoundedCornerShape(100),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.semantics(mergeDescendants = true) {}
+            ) {
+                Text(
+                    text = stringResource(
+                        Res.string.onboarding_step_counter,
+                        stepNumber,
+                        totalSteps
+                    ),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                )
+            }
+            if (showBack) {
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = onBack, enabled = backEnabled) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(Res.string.onboarding_back)
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(14.dp))
         LinearWavyProgressIndicator(
@@ -575,13 +608,20 @@ private fun StepTitle(title: String, description: String) {
 }
 
 @Composable
-private fun WelcomeStep(onContinue: () -> Unit) {
+private fun WelcomeStep(onContinue: () -> Unit, onSkip: () -> Unit) {
     OnboardingPage(
         iconPainter = painterResource(Res.drawable.ic_launcher_monochrome),
         title = stringResource(Res.string.app_name),
         description = stringResource(Res.string.onboarding_files_live_own_private)
     ) {
         BigButton(label = stringResource(Res.string.onboarding_get_started), onClick = onContinue)
+        Spacer(Modifier.height(8.dp))
+        TextButton(
+            onClick = onSkip,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(stringResource(Res.string.onboarding_skip))
+        }
     }
 }
 
@@ -590,6 +630,7 @@ private fun WelcomeStep(onContinue: () -> Unit) {
 private fun CredentialsStep(
     working: Boolean,
     error: UiText?,
+    onOpenProxy: () -> Unit,
     onSubmit: (String, String) -> Unit
 ) {
     var apiId by rememberSaveable { mutableStateOf("") }
@@ -635,6 +676,8 @@ private fun CredentialsStep(
             enabled = apiId.isNotBlank() && apiHash.isNotBlank(),
             onAction = { onSubmit(apiId, apiHash) }
         )
+        Spacer(Modifier.height(12.dp))
+        BlockedNetworkCard(onOpenProxy = onOpenProxy)
     }
 
     if (showGuide) {

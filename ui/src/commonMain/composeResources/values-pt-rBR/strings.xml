@@ -1,6 +1,6 @@
 <resources>
     <!-- App-wide -->
-    <string name="app_name">TeleDrive</string>
+    <string name="app_name">TeleDrive CN</string>
     <string name="app_backed_up">Salvo em backup</string>
     <string name="app_drive_recreated">Seu drive foi excluído no Telegram, portanto um novo vazio foi criado</string>
     <string name="app_no_results">Nenhum resultado</string>

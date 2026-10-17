@@ -6,6 +6,12 @@
 
 Back up and browse your files using a private Telegram channel as storage.
 
+> **说明 / Note**
+>
+> 本仓库是 [Mahmud0808/TeleDrive](https://github.com/Mahmud0808/TeleDrive) 的简体中文复刻版本，其中的修改与调整**由 AI 辅助完成**，未经人工逐行审核。本项目与原作者无关，相关问题请反馈至本仓库，不要提交给上游项目。
+>
+> This repository is a Simplified Chinese fork of the upstream project. The modifications in this repository were **completed with the help of AI** and have not been fully reviewed line by line. It is not affiliated with the original author; please report issues here rather than upstream.
+
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](#requirements)
 [![Windows](https://img.shields.io/badge/Windows-10%2B-0078D4?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0wIDMuNDQ5IDkuNzUgMi4xdjkuNDUxSDB6bTEwLjk0OS0xLjUwMUwyNCAwdjExLjRIMTAuOTQ5ek0wIDEyLjZoOS43NXY5LjQ1MUwwIDIwLjY5OXptMTAuOTQ5IDBIMjRWMjRsLTEzLjA1MS0xLjgwMXoiLz48L3N2Zz4%3D)](#requirements)
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-x86__64-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)](#requirements)

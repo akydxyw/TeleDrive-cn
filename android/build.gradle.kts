@@ -1,4 +1,5 @@
 import com.android.build.api.variant.FilterConfiguration
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -13,7 +14,8 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.drdisagree.teledrive"
+        // 独立包名，便于与原版 TeleDrive 同时安装、互不覆盖
+        applicationId = "com.drdisagree.teledrive.cn"
         minSdk = 26
         targetSdk = 37
         versionCode = libs.versions.appVersionCode.get().toInt()
@@ -32,10 +34,23 @@ android {
         }
     }
 
+    val keystorePropsFile = rootProject.file("keystore.properties")
+    val keystoreProps = Properties().apply {
+        if (keystorePropsFile.isFile) {
+            keystorePropsFile.inputStream().use(::load)
+        }
+    }
     val ciKeystore = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
+    val hasLocalKeystore = keystorePropsFile.isFile
+    val hasSigningConfig = hasLocalKeystore || ciKeystore != null
     signingConfigs {
         create("release") {
-            if (ciKeystore != null) {
+            if (hasLocalKeystore) {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            } else if (ciKeystore != null) {
                 storeFile = file(ciKeystore)
                 storePassword = System.getenv("KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("KEY_ALIAS")
@@ -45,7 +60,7 @@ android {
     }
     buildTypes {
         debug {
-            if (ciKeystore != null) {
+            if (hasSigningConfig) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
@@ -56,7 +71,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            if (ciKeystore != null) {
+            if (hasSigningConfig) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
@@ -87,7 +102,7 @@ androidComponents {
             val extension = output.outputFileName.get().substringAfterLast('.')
             output.outputFileName.set(
                 output.versionName.map { version ->
-                    "${rootProject.name}-$version-$abi-${variant.buildType}.$extension"
+                    "TeleDrive-CN-$version-$abi-${variant.buildType}.$extension"
                 }
             )
         }

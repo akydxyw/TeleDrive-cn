@@ -1,6 +1,6 @@
 package com.drdisagree.teledrive.core.telegram
 
-/** Never logged and never bundled with the app. */
+/** Never logged. */
 data class TelegramCredentials(
     val apiId: Int,
     val apiHash: String

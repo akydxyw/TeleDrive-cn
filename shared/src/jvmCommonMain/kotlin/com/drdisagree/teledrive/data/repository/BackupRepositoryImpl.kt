@@ -24,12 +24,14 @@ import com.drdisagree.teledrive.domain.model.BackupState
 import com.drdisagree.teledrive.domain.model.BackupTrigger
 import com.drdisagree.teledrive.domain.model.ExclusionType
 import com.drdisagree.teledrive.domain.model.FileCategory
+import com.drdisagree.teledrive.domain.model.FolderChange
 import com.drdisagree.teledrive.domain.model.TransferState
 import com.drdisagree.teledrive.domain.repository.BackupRepository
 import com.drdisagree.teledrive.domain.repository.ChannelRepository
 import com.drdisagree.teledrive.domain.repository.ExclusionRepository
 import com.drdisagree.teledrive.domain.repository.FileRepository
 import com.drdisagree.teledrive.domain.repository.SettingsRepository
+import com.drdisagree.teledrive.domain.repository.TrashRepository
 import com.drdisagree.teledrive.domain.usecase.DecideBackupActionUseCase
 import com.drdisagree.teledrive.domain.usecase.ExclusionCandidate
 import com.drdisagree.teledrive.domain.usecase.ExistingBackupRecord
@@ -53,6 +55,7 @@ class BackupRepositoryImpl(
     private val folderPathResolver: FolderPathResolver,
     private val fileRepository: FileRepository,
     private val channelRepository: ChannelRepository,
+    private val trashRepository: TrashRepository,
     private val storagePaths: AppStoragePaths,
     private val dispatchers: DispatcherProvider
 ) : BackupRepository {
@@ -65,7 +68,10 @@ class BackupRepositoryImpl(
     override suspend fun startBackup(trigger: BackupTrigger): AppResult<String?> =
         withContext(dispatchers.io) { runBackup(trigger) }
 
-    private suspend fun runBackup(trigger: BackupTrigger): AppResult<String?> {
+    private suspend fun runBackup(
+        trigger: BackupTrigger,
+        folderFilter: Set<String>? = null
+    ): AppResult<String?> {
         if (backupDao.activeSession() != null) {
             return AppResult.Failure(AppError.BackupAlreadyRunning)
         }
@@ -76,6 +82,8 @@ class BackupRepositoryImpl(
             channelRepository.backupFolders(activeChatId)
         } else {
             emptySet()
+        }.let { all ->
+            if (folderFilter == null) all else all.filter { it in folderFilter }.toSet()
         }
         if (folders.isEmpty()) {
             return AppResult.Failure(
@@ -390,8 +398,153 @@ class BackupRepositoryImpl(
         return path == root || path.startsWith("$root/")
     }
 
+    private fun isHiddenPath(path: String, folder: String): Boolean {
+        val root = folder.trimEnd('/')
+        return path.removePrefix(root).trimStart('/').split('/').any { it.startsWith('.') }
+    }
+
     override suspend fun refreshActiveSession() {
         backupDao.activeSession()?.let { backupSessionTracker.refresh(it.id) }
+    }
+
+    override suspend fun scanFolderChanges(): AppResult<List<FolderChange>> =
+        withContext(dispatchers.io) { scanChanges() }
+
+    private suspend fun scanChanges(): AppResult<List<FolderChange>> {
+        val prefs = settingsRepository.preferences.first()
+        val chatId = prefs.storageChatId
+        val folders = chatId?.let { channelRepository.backupFolders(it) }.orEmpty()
+        if (folders.isEmpty()) return AppResult.Success(emptyList())
+
+        val exclusions = exclusionRepository.getEnabled()
+        val maxSizeBytes = prefs.backupMaxFileSizeMb.toLong() * 1024 * 1024
+        val skipHidden = exclusions.any { it.type == ExclusionType.HIDDEN }
+        val recordsByPath = backupDao.recordsInChat(chatId).associateBy { it.sourcePath }
+
+        val changes = mutableListOf<FolderChange>()
+        for (folderPath in folders) {
+            val root = File(folderPath)
+            if (!root.exists() || root.listFiles() == null) continue
+
+            var added = 0
+            var changed = 0
+            val seenPaths = mutableSetOf<String>()
+            root.walkTopDown()
+                .onEnter { dir -> dir == root || !skipHidden || !isHiddenName(dir) }
+                .filter { it.isFile && it.length() > 0 }
+                .forEach { candidate ->
+                    seenPaths.add(candidate.absolutePath)
+                    val record = recordsByPath[candidate.absolutePath]
+                    // A file uploaded by hand already has a remote copy; syncing just claims it.
+                    if (record == null && isAlreadyUploaded(candidate.absolutePath, chatId)) {
+                        return@forEach
+                    }
+                    val decision = decideBackupAction(
+                        candidate = ExclusionCandidate(
+                            absolutePath = candidate.absolutePath,
+                            sizeBytes = candidate.length(),
+                            mimeType = MimeTypes.fromFileName(candidate.name),
+                            isHidden = candidate.name.startsWith('.')
+                        ),
+                        modifiedAt = candidate.lastModified(),
+                        existingRecord = record?.let {
+                            ExistingBackupRecord(it.sizeBytes, it.modifiedAt, it.contentHash)
+                        },
+                        exclusions = exclusions,
+                        maxFileSizeBytes = maxSizeBytes,
+                        contentHashProvider = { Hashing.sha256(candidate) }
+                    )
+                    if (decision == BackupDecision.BACKUP) {
+                        if (record == null) added++ else changed++
+                    }
+                }
+
+            var deleted = 0
+            for (record in recordsByPath.values) {
+                if (!isInsideFolder(record.sourcePath, folderPath)) continue
+                if (seenPaths.contains(record.sourcePath)) continue
+                // Hidden files were never visited, so their absence proves nothing.
+                if (skipHidden && isHiddenPath(record.sourcePath, folderPath)) continue
+                if (removedFile(record) != null) deleted++
+            }
+
+            if (added + changed + deleted > 0) {
+                changes.add(FolderChange(folderPath, added, changed, deleted))
+            }
+        }
+        return AppResult.Success(changes)
+    }
+
+    override suspend fun applyFolderChanges(folderPaths: Set<String>): AppResult<String?> =
+        withContext(dispatchers.io) {
+            if (folderPaths.isEmpty()) return@withContext AppResult.Success(null)
+
+            val chatId = settingsRepository.preferences.first().storageChatId
+            val selected = chatId?.let { channelRepository.backupFolders(it) }.orEmpty()
+                .filter { it in folderPaths }
+                .toSet()
+            if (selected.isEmpty()) return@withContext AppResult.Success(null)
+
+            removeDeletedFiles(selected, chatId)
+            runBackup(BackupTrigger.MANUAL, selected)
+        }
+
+    /**
+     * Deleted local files leave the drive by way of the trash so the sync stays recoverable.
+     * Entries the app cleaned up itself, or that are already trashed, are not touched remotely.
+     */
+    private suspend fun removeDeletedFiles(folders: Set<String>, chatId: Long?) {
+        val toTrash = mutableListOf<String>()
+        val staleRecordIds = mutableListOf<String>()
+        for (record in backupDao.recordsInChat(chatId)) {
+            if (folders.none { isInsideFolder(record.sourcePath, it) }) continue
+            if (!isDeletedFromDisk(record.sourcePath)) continue
+
+            val file = record.fileId?.let { fileDao.byId(it) }
+            if (file == null || file.trashedAt != null) {
+                staleRecordIds.add(record.id)
+                continue
+            }
+            // Null localPath means the app released the copy (delete-after-upload), not a deletion.
+            if (file.localPath == null || file.localPath != record.sourcePath) continue
+            if (file.messageId == null) {
+                staleRecordIds.add(record.id)
+                continue
+            }
+            toTrash.add(file.id)
+            staleRecordIds.add(record.id)
+        }
+
+        if (toTrash.isNotEmpty()) trashRepository.moveFilesToTrash(toTrash)
+        if (staleRecordIds.isNotEmpty()) backupDao.deleteRecordsByIds(staleRecordIds)
+    }
+
+    private suspend fun removedFile(record: BackupRecordEntity): FileEntity? {
+        val file = record.fileId?.let { fileDao.byId(it) } ?: return null
+        if (file.trashedAt != null) return null
+        val localPath = file.localPath ?: return null
+        if (localPath != record.sourcePath) return null
+        if (File(localPath).exists()) return null
+        return file.takeIf { it.messageId != null }
+    }
+
+    /**
+     * Only counts a missing file as deleted when the nearest existing ancestor is readable, so an
+     * unmounted SD card or a denied permission cannot wipe the drive.
+     */
+    private fun isDeletedFromDisk(path: String): Boolean {
+        val file = File(path)
+        if (file.exists()) return false
+        var ancestor = file.parentFile
+        while (ancestor != null && !ancestor.exists()) {
+            ancestor = ancestor.parentFile
+        }
+        return ancestor != null && ancestor.listFiles() != null
+    }
+
+    private suspend fun isAlreadyUploaded(path: String, chatId: Long?): Boolean {
+        val existing = fileDao.byLocalPath(path, chatId) ?: return false
+        return existing.messageId != null && existing.backupState == BackupState.BACKED_UP
     }
 
     private suspend fun setTransfers(sessionId: String, from: TransferState, to: TransferState) {

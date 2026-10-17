@@ -61,8 +61,10 @@ fun AppNavHost(
             OnboardingScreen(
                 onOpenProxy = { navController.navigateOnce(Route.Proxy) },
                 onFinished = {
-                    navController.navigateOnce(Route.Home) {
-                        popUpTo(Route.Onboarding) { inclusive = true }
+                    if (!navController.popBackStack(Route.Home, inclusive = false)) {
+                        navController.navigateOnce(Route.Home) {
+                            popUpTo(Route.Onboarding) { inclusive = true }
+                        }
                     }
                 }
             )
@@ -210,7 +212,8 @@ fun AppNavHost(
                     navController.navigateOnce(Route.Onboarding) {
                         popUpTo(0) { inclusive = true }
                     }
-                }
+                },
+                onConfigureApi = { navController.navigateOnce(Route.Onboarding) }
             )
         }
         composable<Route.Exclusions> {

@@ -11,5 +11,7 @@ data class SettingsUiState(
     val connection: TelegramConnectionState = TelegramConnectionState.CONNECTING,
     val cacheStats: CacheStats = CacheStats(0, 0, 0, 0, 0),
     val syncing: Boolean = false,
-    val loading: Boolean = true
+    val loading: Boolean = true,
+    /** False after setup was skipped: no API credentials, so the account is not set up yet. */
+    val hasStoredCredentials: Boolean = false
 )

@@ -75,7 +75,7 @@ class UpdateChecker(
     private companion object {
         const val TAG = "UpdateChecker"
         const val RELEASES_URL =
-            "https://api.github.com/repos/Mahmud0808/TeleDrive/releases/latest"
+            "https://api.github.com/repos/akydxyw/TeleDrive-cn/releases/latest"
         const val USER_AGENT = "TeleDrive"
         const val TIMEOUT_MS = 15_000
     }

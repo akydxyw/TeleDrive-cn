@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.drdisagree.teledrive.core.security.AppLockManager
 import com.drdisagree.teledrive.core.telegram.TelegramAuthState
 import com.drdisagree.teledrive.domain.model.BackupTrigger
+import com.drdisagree.teledrive.domain.model.FolderChange
 import com.drdisagree.teledrive.domain.model.LayoutDensity
 import com.drdisagree.teledrive.domain.repository.BackupRepository
 import com.drdisagree.teledrive.domain.repository.ChannelRepository
@@ -54,6 +55,9 @@ class AppViewModel(
     private val _pendingUpdate = MutableStateFlow<AppRelease?>(null)
     val pendingUpdate: StateFlow<AppRelease?> = _pendingUpdate.asStateFlow()
 
+    private val _pendingFolderChanges = MutableStateFlow<List<FolderChange>>(emptyList())
+    val pendingFolderChanges: StateFlow<List<FolderChange>> = _pendingFolderChanges.asStateFlow()
+
     @Volatile
     private var driveReady = false
     private var following: Job? = null
@@ -101,11 +105,39 @@ class AppViewModel(
                 }
                 driveReady = true
                 syncRepository.syncOnStart()
-                catchUpBackup()
+                checkFolderChangesOnStart()
                 viewModelScope.launch { syncRepository.catchUpWithRemote() }
                 startFollowing()
             }
             .launchIn(viewModelScope)
+    }
+
+    /**
+     * With the option enabled, the start-up backup waits for the user: only the folders they
+     * tick in the dialog are synced. Otherwise the usual silent catch-up runs.
+     */
+    private suspend fun checkFolderChangesOnStart() {
+        val enabled = settingsRepository.preferences.first().folderChangeSyncEnabled
+        if (!enabled) {
+            catchUpBackup()
+            return
+        }
+        val changes = runCatching { backupRepository.scanFolderChanges() }.getOrNull()
+        if (changes is AppResult.Success && changes.value.isNotEmpty()) {
+            _pendingFolderChanges.value = changes.value
+        } else {
+            catchUpBackup()
+        }
+    }
+
+    fun syncFolderChanges(folderPaths: Set<String>) {
+        if (folderPaths.isEmpty()) return
+        _pendingFolderChanges.value = emptyList()
+        viewModelScope.launch { backupRepository.applyFolderChanges(folderPaths) }
+    }
+
+    fun dismissFolderChanges() {
+        _pendingFolderChanges.value = emptyList()
     }
 
     /** Folders live with the active drive, so the check has to ask the channel. */

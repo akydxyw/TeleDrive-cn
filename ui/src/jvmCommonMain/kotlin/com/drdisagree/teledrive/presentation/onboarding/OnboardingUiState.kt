@@ -29,4 +29,20 @@ data class OnboardingUiState(
     val autoBackupEnabled: Boolean = true,
     val wifiOnly: Boolean = false,
     val finishing: Boolean = false
-)
+) {
+    /** Steps that have a meaningful earlier screen and can offer a back action. */
+    val canGoBack: Boolean
+        get() = step in BACKABLE_STEPS
+
+    private companion object {
+        val BACKABLE_STEPS = setOf(
+            OnboardingStep.API_CREDENTIALS,
+            OnboardingStep.PHONE,
+            OnboardingStep.EMAIL_ADDRESS,
+            OnboardingStep.EMAIL_CODE,
+            OnboardingStep.CODE,
+            OnboardingStep.PASSWORD,
+            OnboardingStep.BACKUP_SETUP
+        )
+    }
+}

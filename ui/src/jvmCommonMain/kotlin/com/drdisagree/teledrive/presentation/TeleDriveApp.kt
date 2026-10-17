@@ -81,6 +81,7 @@ import com.drdisagree.teledrive.domain.model.AppTheme
 import com.drdisagree.teledrive.presentation.applock.LockScreen
 import com.drdisagree.teledrive.presentation.components.LoadingState
 import com.drdisagree.teledrive.presentation.components.LocalCompactLayout
+import com.drdisagree.teledrive.presentation.components.FolderChangeSyncDialog
 import com.drdisagree.teledrive.presentation.components.SessionBrokenDialog
 import com.drdisagree.teledrive.presentation.components.UpdateDialog
 import com.drdisagree.teledrive.presentation.navigation.AppNavHost
@@ -128,6 +129,7 @@ fun TeleDriveApp(
     }
 
     val pendingUpdate by viewModel.pendingUpdate.collectAsStateWithLifecycle()
+    val pendingFolderChanges by viewModel.pendingFolderChanges.collectAsStateWithLifecycle()
     val sessionBroken by viewModel.sessionBroken.collectAsStateWithLifecycle()
     val urlOpener = LocalUrlOpener.current
 
@@ -187,6 +189,15 @@ fun TeleDriveApp(
                     },
                     onDismiss = viewModel::dismissUpdate
                 )
+            }
+            if (!state.loading && !state.locked && state.onboardingComplete && pendingUpdate == null) {
+                pendingFolderChanges.takeIf { it.isNotEmpty() }?.let { changes ->
+                    FolderChangeSyncDialog(
+                        changes = changes,
+                        onSync = viewModel::syncFolderChanges,
+                        onDismiss = viewModel::dismissFolderChanges
+                    )
+                }
             }
         }
     }

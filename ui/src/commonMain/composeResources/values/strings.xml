@@ -1,6 +1,6 @@
 <resources>
     <!-- App-wide -->
-    <string name="app_name">TeleDrive</string>
+    <string name="app_name">TeleDrive CN</string>
     <string name="app_backed_up">Backed up</string>
     <string name="app_drive_recreated">Your drive was deleted in Telegram, so a new empty one was created</string>
     <string name="app_no_results">No results</string>
@@ -126,6 +126,15 @@
     <string name="date_today">Today</string>
     <string name="date_yesterday">Yesterday</string>
 
+    <!-- Folder changes -->
+    <string name="folder_changes_added">%1$d new</string>
+    <string name="folder_changes_changed">%1$d changed</string>
+    <string name="folder_changes_deleted">%1$d deleted</string>
+    <string name="folder_changes_later">Later</string>
+    <string name="folder_changes_message">Choose the folders to sync. Files removed from disk go to the trash, and new or changed files are uploaded.</string>
+    <string name="folder_changes_sync_selected">Sync selected</string>
+    <string name="folder_changes_title">Folder changes detected</string>
+
     <!-- App lock -->
     <string name="lock_no_screen_lock">Screen lock is not available on this device. Unlocking.</string>
     <string name="lock_prompt_title">Unlock TeleDrive</string>
@@ -138,6 +147,7 @@
 
     <!-- Onboarding flow -->
     <string name="onboarding_action_continue">Continue</string>
+    <string name="onboarding_back">Back</string>
     <string name="onboarding_continue">Continue</string>
     <string name="onboarding_continue_without">Continue without it</string>
     <string name="onboarding_files_live_own_private">Your files live in your own private Telegram channel. Your account, your storage, your control.</string>
@@ -145,6 +155,7 @@
     <string name="onboarding_got">Got it</string>
     <string name="onboarding_opening">Opening</string>
     <string name="onboarding_sign">Sign in</string>
+    <string name="onboarding_skip">Skip for now</string>
     <string name="onboarding_step">onboarding-step</string>
     <string name="onboarding_step_counter">Step %1$d of %2$d</string>
     <string name="onboarding_verify">Verify</string>
@@ -612,6 +623,8 @@
     <string name="settings_back_new_media_instantly">Back up new media instantly</string>
     <string name="settings_backup_folders_title">Backup folders</string>
     <string name="settings_backup_interval">Backup interval</string>
+    <string name="settings_folder_change_sync">Ask to sync folder changes</string>
+    <string name="settings_folder_change_sync_summary">When the app opens, list the backup folders whose contents changed and let you pick which ones to sync.</string>
     <string name="settings_folder_unreadable">That folder cannot be read directly</string>
     <string name="settings_no_folders_selected">No folders selected, so folder backup does nothing. Manual uploads from Files are unaffected.</string>
     <string name="settings_only_charging">Only while charging</string>

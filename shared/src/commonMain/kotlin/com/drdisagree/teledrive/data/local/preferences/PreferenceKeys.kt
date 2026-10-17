@@ -21,6 +21,7 @@ object PreferenceKeys {
     val BACKUP_CHARGING_ONLY = booleanPreferencesKey("backup_charging_only")
     val BACKUP_INTERVAL_HOURS = intPreferencesKey("backup_interval_hours")
     val BACKUP_MAX_FILE_SIZE_MB = intPreferencesKey("backup_max_file_size_mb")
+    val FOLDER_CHANGE_SYNC_ENABLED = booleanPreferencesKey("folder_change_sync_enabled")
 
     val MAX_CACHE_SIZE_MB = intPreferencesKey("max_cache_size_mb")
     val TRASH_AUTO_CLEAR_DAYS = intPreferencesKey("trash_auto_clear_days")

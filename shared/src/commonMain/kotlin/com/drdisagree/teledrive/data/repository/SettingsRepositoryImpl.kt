@@ -83,6 +83,8 @@ class SettingsRepositoryImpl(
                 ?: defaults.backupIntervalHours,
             backupMaxFileSizeMb = this[PreferenceKeys.BACKUP_MAX_FILE_SIZE_MB]
                 ?: defaults.backupMaxFileSizeMb,
+            folderChangeSyncEnabled = this[PreferenceKeys.FOLDER_CHANGE_SYNC_ENABLED]
+                ?: defaults.folderChangeSyncEnabled,
             maxCacheSizeMb = this[PreferenceKeys.MAX_CACHE_SIZE_MB] ?: defaults.maxCacheSizeMb,
             trashAutoClearDays = this[PreferenceKeys.TRASH_AUTO_CLEAR_DAYS]
                 ?: defaults.trashAutoClearDays,
@@ -174,6 +176,7 @@ class SettingsRepositoryImpl(
         this[PreferenceKeys.BACKUP_CHARGING_ONLY] = prefs.backupChargingOnly
         this[PreferenceKeys.BACKUP_INTERVAL_HOURS] = prefs.backupIntervalHours
         this[PreferenceKeys.BACKUP_MAX_FILE_SIZE_MB] = prefs.backupMaxFileSizeMb
+        this[PreferenceKeys.FOLDER_CHANGE_SYNC_ENABLED] = prefs.folderChangeSyncEnabled
         this[PreferenceKeys.MAX_CACHE_SIZE_MB] = prefs.maxCacheSizeMb
         this[PreferenceKeys.TRASH_AUTO_CLEAR_DAYS] = prefs.trashAutoClearDays
         this[PreferenceKeys.BLOCK_SCREEN_CAPTURE] = prefs.blockScreenCapture

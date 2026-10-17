@@ -87,27 +87,29 @@ fun SettingsClickRow(
     subtitle: String? = null,
     titleColor: Color? = null,
     trailing: (@Composable () -> Unit)? = null,
-    icon: ImageVector? = null
+    icon: ImageVector? = null,
+    enabled: Boolean = true
 ) {
+    val contentAlpha = if (enabled) 1f else 0.38f
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        RowIcon(icon)
+        RowIcon(icon, enabled)
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 title,
                 style = MaterialTheme.typography.bodyLarge,
-                color = titleColor ?: MaterialTheme.colorScheme.onSurface
+                color = (titleColor ?: MaterialTheme.colorScheme.onSurface).copy(alpha = contentAlpha)
             )
             subtitle?.let {
                 Text(
                     it,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
                 )
             }
         }
@@ -119,12 +121,12 @@ fun SettingsClickRow(
 }
 
 @Composable
-private fun RowIcon(icon: ImageVector?) {
+private fun RowIcon(icon: ImageVector?, enabled: Boolean = true) {
     icon ?: return
     Icon(
         imageVector = icon,
         contentDescription = null,
-        tint = MaterialTheme.colorScheme.primary,
+        tint = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.38f),
         modifier = Modifier.size(ROW_ICON_SIZE)
     )
     Spacer(Modifier.width(16.dp))

@@ -3,6 +3,7 @@ package com.drdisagree.teledrive.domain.repository
 import com.drdisagree.teledrive.core.common.AppResult
 import com.drdisagree.teledrive.domain.model.BackupSession
 import com.drdisagree.teledrive.domain.model.BackupTrigger
+import com.drdisagree.teledrive.domain.model.FolderChange
 import kotlinx.coroutines.flow.Flow
 
 interface BackupRepository {
@@ -24,4 +25,14 @@ interface BackupRepository {
 
     /** Called at startup so a session whose transfers finished while the app was dead settles. */
     suspend fun refreshActiveSession()
+
+    /** Returns the pending local changes per backup folder, or an empty list when there are none. */
+    suspend fun scanFolderChanges(): AppResult<List<FolderChange>>
+
+    /**
+     * Syncs only the given folders: missing local files are removed from the drive and new or
+     * modified files are queued for upload. Returns the session id, or null when nothing needed
+     * uploading.
+     */
+    suspend fun applyFolderChanges(folderPaths: Set<String>): AppResult<String?>
 }

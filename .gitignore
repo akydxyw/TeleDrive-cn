@@ -9,3 +9,7 @@ build/
 .cxx
 local.properties
 .kotlin
+keystore.properties
+keystore/
+*.jks
+*.keystore

@@ -98,6 +98,8 @@ import com.drdisagree.teledrive.resources.settings_failures
 import com.drdisagree.teledrive.resources.settings_files_folders_skipped_backup
 import com.drdisagree.teledrive.resources.settings_files_sealed_leaving_device
 import com.drdisagree.teledrive.resources.settings_files_stay_telegram_channel
+import com.drdisagree.teledrive.resources.settings_folder_change_sync
+import com.drdisagree.teledrive.resources.settings_folder_change_sync_summary
 import com.drdisagree.teledrive.resources.settings_folder_unreadable
 import com.drdisagree.teledrive.resources.settings_free_up_space_title
 import com.drdisagree.teledrive.resources.settings_gallery_previews_regenerated_browse
@@ -196,6 +198,7 @@ fun SettingsSectionScreen(
     onOpenExclusions: () -> Unit,
     onOpenProxy: () -> Unit,
     onLoggedOut: () -> Unit,
+    onConfigureApi: () -> Unit,
     viewModel: SettingsViewModel = koinViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -250,7 +253,8 @@ fun SettingsSectionScreen(
                     onPickChannel = onOpenChannels,
                     state = state,
                     viewModel = viewModel,
-                    onLogout = { confirmLogout = true }
+                    onLogout = { confirmLogout = true },
+                    onConfigureApi = onConfigureApi
                 )
 
                 SettingsSectionType.BACKUP -> BackupSection(
@@ -316,9 +320,11 @@ private fun AccountSection(
     state: SettingsUiState,
     viewModel: SettingsViewModel,
     onPickChannel: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onConfigureApi: () -> Unit
 ) {
     val indexedSoFar by viewModel.indexedSoFar.collectAsStateWithLifecycle()
+    val setupSkipped = !state.hasStoredCredentials
 
     SettingsGroup {
         add {
@@ -340,7 +346,7 @@ private fun AccountSection(
                     )
                     if (state.user?.isPremium == true) append(" · Premium (4 GB uploads)")
                 },
-                onClick = { }
+                onClick = { if (setupSkipped) onConfigureApi() }
             )
         }
         add {
@@ -358,14 +364,16 @@ private fun AccountSection(
                 onClick = { if (!state.syncing) viewModel.resync() },
                 trailing = if (state.syncing) {
                     { LoadingIndicator(modifier = Modifier.size(24.dp)) }
-                } else null
+                } else null,
+                enabled = !setupSkipped
             )
         }
         add {
             SettingsClickRow(
                 title = stringResource(Res.string.common_storage_channels),
                 subtitle = stringResource(Res.string.settings_switch_drives_create_another),
-                onClick = onPickChannel
+                onClick = onPickChannel,
+                enabled = !setupSkipped
             )
         }
         add {
@@ -373,7 +381,8 @@ private fun AccountSection(
                 title = stringResource(Res.string.settings_log),
                 subtitle = stringResource(Res.string.settings_removes_session_stored_api),
                 titleColor = MaterialTheme.colorScheme.error,
-                onClick = onLogout
+                onClick = onLogout,
+                enabled = !setupSkipped
             )
         }
     }
@@ -447,6 +456,16 @@ private fun BackupSection(
                 checked = prefs.autoBackupEnabled,
                 onChange = { value ->
                     viewModel.update { it.copy(autoBackupEnabled = value) }
+                }
+            )
+        }
+        add(visible = prefs.autoBackupEnabled) {
+            SettingsSwitchRow(
+                title = stringResource(Res.string.settings_folder_change_sync),
+                subtitle = stringResource(Res.string.settings_folder_change_sync_summary),
+                checked = prefs.folderChangeSyncEnabled,
+                onChange = { value ->
+                    viewModel.update { it.copy(folderChangeSyncEnabled = value) }
                 }
             )
         }
