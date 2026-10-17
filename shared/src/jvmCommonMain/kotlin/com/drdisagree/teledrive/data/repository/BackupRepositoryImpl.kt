@@ -15,6 +15,7 @@ import com.drdisagree.teledrive.data.local.dao.TransferDao
 import com.drdisagree.teledrive.data.local.entity.BackupRecordEntity
 import com.drdisagree.teledrive.data.local.entity.BackupSessionEntity
 import com.drdisagree.teledrive.data.local.entity.FileEntity
+import com.drdisagree.teledrive.data.local.entity.RemoteFileRef
 import com.drdisagree.teledrive.data.local.entity.TransferEntity
 import com.drdisagree.teledrive.data.mapper.toDomain
 import com.drdisagree.teledrive.domain.model.BackupDecision
@@ -70,9 +71,15 @@ class BackupRepositoryImpl(
 
     private suspend fun runBackup(
         trigger: BackupTrigger,
-        folderFilter: Set<String>? = null
+        folderFilter: Set<String>? = null,
+        joinActiveSession: Boolean = false
     ): AppResult<String?> {
-        if (backupDao.activeSession() != null) {
+        val activeSession = backupDao.activeSession()
+        // A folder sync still has work to do while a backup runs, so it joins that session
+        // instead of failing silently. A paused session waits for the user.
+        if (activeSession != null &&
+            (!joinActiveSession || activeSession.status != BackupSessionStatus.RUNNING)
+        ) {
             return AppResult.Failure(AppError.BackupAlreadyRunning)
         }
 
@@ -98,6 +105,22 @@ class BackupRepositoryImpl(
         val exclusions = exclusionRepository.getEnabled()
         val maxSizeBytes = prefs.backupMaxFileSizeMb.toLong() * 1024 * 1024
         val skipHidden = exclusions.any { it.type == ExclusionType.HIDDEN }
+        // A record outlives a remote copy removed on another device. Reusing it would compare
+        // size and mtime and skip the file, so only records still backed by a live remote copy
+        // count as "already uploaded".
+        val recordsByPath = backupDao.recordsInChat(activeChatId).associateBy { it.sourcePath }
+        val recordFilesById = fileDao.byIds(
+            recordsByPath.values.mapNotNull { it.fileId }.distinct()
+        ).associateBy { it.id }
+        fun BackupRecordEntity.hasLiveRemoteCopy(): Boolean {
+            val file = fileId?.let { recordFilesById[it] } ?: return false
+            return file.messageId != null && file.trashedAt == null
+        }
+        // A row stays in the app trash even after its bytes reappear on disk, so the scan would
+        // reuse that trashed row and leave the file in the trash after uploading it again.
+        val trashedByPath = fileDao.trashInChat(activeChatId)
+            .filter { it.localPath != null }
+            .associateBy { it.localPath!! }
         val candidates = mutableListOf<File>()
         var unreadable = 0
         for (folderPath in folders) {
@@ -123,7 +146,18 @@ class BackupRepositoryImpl(
         val reasons = mutableMapOf<BackupDecision, Int>()
         val toBackup = mutableListOf<File>()
         for (candidate in candidates) {
-            if (backupDao.recordByPath(candidate.absolutePath, activeChatId) == null &&
+            // The file exists on disk again, so its trashed row is a restore, not a new upload.
+            val trashed = trashedByPath[candidate.absolutePath]
+            if (trashed != null) {
+                restoreTrashedRow(trashed, candidate, activeChatId)
+                if (trashed.messageId != null) {
+                    recordBackedUp(candidate, trashed.id, trashed.contentHash, activeChatId)
+                    skipped++
+                    continue
+                }
+            }
+            val record = recordsByPath[candidate.absolutePath]
+            if (record == null &&
                 (adoptLinkedUpload(candidate, activeChatId) ||
                         reviveTrashedUpload(candidate, activeChatId) ||
                         adoptUploadedCopy(candidate, activeChatId))
@@ -131,7 +165,6 @@ class BackupRepositoryImpl(
                 skipped++
                 continue
             }
-            val record = backupDao.recordByPath(candidate.absolutePath, activeChatId)
             val mime = MimeTypes.fromFileName(candidate.name)
             val decision = decideBackupAction(
                 candidate = ExclusionCandidate(
@@ -141,7 +174,7 @@ class BackupRepositoryImpl(
                     isHidden = candidate.name.startsWith('.')
                 ),
                 modifiedAt = candidate.lastModified(),
-                existingRecord = record?.let {
+                existingRecord = record?.takeIf { it.hasLiveRemoteCopy() }?.let {
                     ExistingBackupRecord(
                         it.sizeBytes, it.modifiedAt, it.contentHash
                     )
@@ -168,7 +201,14 @@ class BackupRepositoryImpl(
             return AppResult.Success(null)
         }
 
-        val session = BackupSessionEntity(
+        val session = activeSession?.also { running ->
+            backupDao.updateSession(
+                running.copy(
+                    totalFiles = running.totalFiles + toBackup.size,
+                    totalBytes = running.totalBytes + totalBytes
+                )
+            )
+        } ?: BackupSessionEntity(
             id = UUID.randomUUID().toString(),
             trigger = trigger,
             status = BackupSessionStatus.RUNNING,
@@ -176,8 +216,7 @@ class BackupRepositoryImpl(
             skippedFiles = skipped,
             totalBytes = totalBytes,
             startedAt = System.currentTimeMillis()
-        )
-        backupDao.upsertSession(session)
+        ).also { backupDao.upsertSession(it) }
 
         for (batch in toBackup.chunked(ENQUEUE_BATCH)) {
             val fileIds = batch.map {
@@ -216,6 +255,16 @@ class BackupRepositoryImpl(
         recordBackedUp(candidate, revived.id, revived.contentHash, chatId)
         SafeLog.d(TAG, "Restored a trashed file instead of uploading a copy")
         return true
+    }
+
+    /**
+     * The row outlived a manual delete, so re-syncing puts it back in its folder instead of
+     * leaving the file sitting in the app trash after it has been uploaded again.
+     */
+    private suspend fun restoreTrashedRow(row: FileEntity, candidate: File, chatId: Long?) {
+        trashRepository.restoreFiles(listOf(row.id))
+        fileRepository.moveFiles(listOf(row.id), backupFolderIdFor(candidate, chatId))
+        SafeLog.d(TAG, "Restored a trashed file whose bytes are back on disk")
     }
 
     /**
@@ -420,6 +469,27 @@ class BackupRepositoryImpl(
         val maxSizeBytes = prefs.backupMaxFileSizeMb.toLong() * 1024 * 1024
         val skipHidden = exclusions.any { it.type == ExclusionType.HIDDEN }
         val recordsByPath = backupDao.recordsInChat(chatId).associateBy { it.sourcePath }
+        val recordsByFileId = recordsByPath.values
+            .mapNotNull { record -> record.fileId?.let { id -> id to record } }
+            .toMap()
+        // A record whose file lost its remote copy must not hide a local file from the scan.
+        val remoteFilesById = fileDao.byIds(
+            recordsByPath.values.mapNotNull { it.fileId }.distinct()
+        ).associateBy { it.id }
+        fun BackupRecordEntity.hasRemoteCopy(): Boolean {
+            val file = fileId?.let { remoteFilesById[it] } ?: return false
+            return file.messageId != null && file.trashedAt == null
+        }
+        fun BackupRecordEntity.removedCopy(): FileEntity? {
+            val file = fileId?.let { remoteFilesById[it] } ?: return null
+            if (file.trashedAt != null) return null
+            val localPath = file.localPath ?: return null
+            if (localPath != sourcePath) return null
+            if (File(localPath).exists()) return null
+            return file.takeIf { it.messageId != null }
+        }
+        // One lookup for every copy the drive already holds, instead of a query per file.
+        val uploadedPaths = fileDao.backedUpLocalPaths(chatId).toHashSet()
 
         val changes = mutableListOf<FolderChange>()
         for (folderPath in folders) {
@@ -436,9 +506,10 @@ class BackupRepositoryImpl(
                     seenPaths.add(candidate.absolutePath)
                     val record = recordsByPath[candidate.absolutePath]
                     // A file uploaded by hand already has a remote copy; syncing just claims it.
-                    if (record == null && isAlreadyUploaded(candidate.absolutePath, chatId)) {
+                    if (record == null && uploadedPaths.contains(candidate.absolutePath)) {
                         return@forEach
                     }
+                    val syncedRecord = record?.takeIf { it.hasRemoteCopy() }
                     val decision = decideBackupAction(
                         candidate = ExclusionCandidate(
                             absolutePath = candidate.absolutePath,
@@ -447,7 +518,7 @@ class BackupRepositoryImpl(
                             isHidden = candidate.name.startsWith('.')
                         ),
                         modifiedAt = candidate.lastModified(),
-                        existingRecord = record?.let {
+                        existingRecord = syncedRecord?.let {
                             ExistingBackupRecord(it.sizeBytes, it.modifiedAt, it.contentHash)
                         },
                         exclusions = exclusions,
@@ -455,7 +526,7 @@ class BackupRepositoryImpl(
                         contentHashProvider = { Hashing.sha256(candidate) }
                     )
                     if (decision == BackupDecision.BACKUP) {
-                        if (record == null) added++ else changed++
+                        if (syncedRecord == null) added++ else changed++
                     }
                 }
 
@@ -465,7 +536,12 @@ class BackupRepositoryImpl(
                 if (seenPaths.contains(record.sourcePath)) continue
                 // Hidden files were never visited, so their absence proves nothing.
                 if (skipHidden && isHiddenPath(record.sourcePath, folderPath)) continue
-                if (removedFile(record) != null) deleted++
+                if (record.removedCopy() != null) deleted++
+            }
+            // The drive may also hold files this device never had. Released copies (delete after
+            // upload) look alike, so that mode keeps its hands off the remote side.
+            if (!prefs.deleteAfterUpload) {
+                deleted += remoteOnlyFiles(folderPath, chatId, recordsByFileId, skipHidden).size
             }
 
             if (added + changed + deleted > 0) {
@@ -479,14 +555,16 @@ class BackupRepositoryImpl(
         withContext(dispatchers.io) {
             if (folderPaths.isEmpty()) return@withContext AppResult.Success(null)
 
-            val chatId = settingsRepository.preferences.first().storageChatId
+            val prefs = settingsRepository.preferences.first()
+            val chatId = prefs.storageChatId
             val selected = chatId?.let { channelRepository.backupFolders(it) }.orEmpty()
                 .filter { it in folderPaths }
                 .toSet()
             if (selected.isEmpty()) return@withContext AppResult.Success(null)
 
             removeDeletedFiles(selected, chatId)
-            runBackup(BackupTrigger.MANUAL, selected)
+            if (!prefs.deleteAfterUpload) removeRemoteOnlyFiles(selected, chatId)
+            runBackup(BackupTrigger.MANUAL, selected, joinActiveSession = true)
         }
 
     /**
@@ -519,6 +597,39 @@ class BackupRepositoryImpl(
         if (staleRecordIds.isNotEmpty()) backupDao.deleteRecordsByIds(staleRecordIds)
     }
 
+    private suspend fun removeRemoteOnlyFiles(folders: Set<String>, chatId: Long?) {
+        val recordsByFileId = backupDao.recordsInChat(chatId)
+            .mapNotNull { record -> record.fileId?.let { id -> id to record } }
+            .toMap()
+        val skipHidden = exclusionRepository.getEnabled().any { it.type == ExclusionType.HIDDEN }
+        val ids = folders.flatMap { folderPath ->
+            remoteOnlyFiles(folderPath, chatId, recordsByFileId, skipHidden).map { it.id }
+        }.distinct()
+        if (ids.isNotEmpty()) trashRepository.moveFilesToTrash(ids)
+    }
+
+    /**
+     * Members of a backup folder's remote tree with no local counterpart. A live local copy is
+     * tracked either by the file row itself or by a backup record, so the rest exists only in
+     * the drive.
+     */
+    private suspend fun remoteOnlyFiles(
+        folderPath: String,
+        chatId: Long?,
+        recordsByFileId: Map<String, BackupRecordEntity>,
+        skipHidden: Boolean
+    ): List<RemoteFileRef> {
+        val remotePath = relativeToStorageRoot(folderPath)
+        val folderId = folderPathResolver.resolveExisting(remotePath, chatId)
+            ?: return emptyList()
+        return fileDao.remoteFilesInFolderTree(folderId, chatId).filter { file ->
+            if (skipHidden && file.name.startsWith('.')) return@filter false
+            if (recordsByFileId.containsKey(file.id)) return@filter false
+            val localPath = file.localPath ?: return@filter true
+            !File(localPath).exists()
+        }
+    }
+
     private suspend fun removedFile(record: BackupRecordEntity): FileEntity? {
         val file = record.fileId?.let { fileDao.byId(it) } ?: return null
         if (file.trashedAt != null) return null
@@ -540,11 +651,6 @@ class BackupRepositoryImpl(
             ancestor = ancestor.parentFile
         }
         return ancestor != null && ancestor.listFiles() != null
-    }
-
-    private suspend fun isAlreadyUploaded(path: String, chatId: Long?): Boolean {
-        val existing = fileDao.byLocalPath(path, chatId) ?: return false
-        return existing.messageId != null && existing.backupState == BackupState.BACKED_UP
     }
 
     private suspend fun setTransfers(sessionId: String, from: TransferState, to: TransferState) {

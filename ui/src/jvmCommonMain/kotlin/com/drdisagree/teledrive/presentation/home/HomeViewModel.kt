@@ -11,6 +11,7 @@ import com.drdisagree.teledrive.core.security.AppLockManager
 import com.drdisagree.teledrive.core.transfer.BackupGate
 import com.drdisagree.teledrive.data.local.dao.FileDao
 import com.drdisagree.teledrive.data.repository.ActiveChannel
+import com.drdisagree.teledrive.data.repository.FolderChangeNotifier
 import com.drdisagree.teledrive.domain.model.BackupTrigger
 import com.drdisagree.teledrive.domain.model.DriveChannel
 import com.drdisagree.teledrive.domain.model.StorageSlice
@@ -62,7 +63,8 @@ class HomeViewModel(
     private val fileDao: FileDao,
     private val activeChannel: ActiveChannel,
     private val channelRepository: ChannelRepository,
-    private val powerMonitor: PowerMonitor
+    private val powerMonitor: PowerMonitor,
+    private val folderChangeNotifier: FolderChangeNotifier
 ) : ViewModel() {
 
     private val missingPermissions = MutableStateFlow(permissionChecker.missingCritical())
@@ -198,6 +200,10 @@ class HomeViewModel(
         if (_scanning.value) return
         viewModelScope.launch {
             _scanning.value = true
+            if (publishFolderChanges()) {
+                _scanning.value = false
+                return@launch
+            }
             val message = when (val result = transferRepository.enqueuePendingUploads()) {
                 is AppResult.Success -> if (result.value == 0) {
                     UiText.Resource(Res.string.home_nothing_new_to_back_up)
@@ -219,6 +225,11 @@ class HomeViewModel(
         if (_scanning.value) return
         viewModelScope.launch {
             _scanning.value = true
+            // Ask first when the folder contents no longer match the drive.
+            if (publishFolderChanges()) {
+                _scanning.value = false
+                return@launch
+            }
             val message = when (val result = backupRepository.startBackup(BackupTrigger.MANUAL)) {
                 is AppResult.Success ->
                     if (result.value == null) {
@@ -232,6 +243,17 @@ class HomeViewModel(
             _scanning.value = false
             _messages.tryEmit(message)
         }
+    }
+
+    /**
+     * Every scan entry point asks the user first, so a mismatch reaches the same dialog no matter
+     * which button started it.
+     */
+    private suspend fun publishFolderChanges(): Boolean {
+        val changes = runCatching { backupRepository.scanFolderChanges() }.getOrNull()
+        if (changes !is AppResult.Success || changes.value.isEmpty()) return false
+        folderChangeNotifier.publish(changes.value)
+        return true
     }
 
     fun pauseBackup(sessionId: String) {

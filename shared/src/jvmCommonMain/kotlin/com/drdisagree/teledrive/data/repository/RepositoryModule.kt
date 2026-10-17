@@ -20,6 +20,7 @@ import org.koin.dsl.module
 val repositoryModule = module {
     singleOf(::ManifestCodec)
     singleOf(::ActiveChannel)
+    singleOf(::FolderChangeNotifier)
     singleOf(::ChannelOwnership)
     singleOf(::FolderOwnershipRepair)
     singleOf(::FileManifestPublisher)

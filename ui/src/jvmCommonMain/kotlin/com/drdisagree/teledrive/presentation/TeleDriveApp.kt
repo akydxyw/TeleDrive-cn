@@ -40,6 +40,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
@@ -81,6 +83,7 @@ import com.drdisagree.teledrive.domain.model.AppTheme
 import com.drdisagree.teledrive.presentation.applock.LockScreen
 import com.drdisagree.teledrive.presentation.components.LoadingState
 import com.drdisagree.teledrive.presentation.components.LocalCompactLayout
+import com.drdisagree.teledrive.presentation.common.CollectSnackbarMessages
 import com.drdisagree.teledrive.presentation.components.FolderChangeSyncDialog
 import com.drdisagree.teledrive.presentation.components.SessionBrokenDialog
 import com.drdisagree.teledrive.presentation.components.UpdateDialog
@@ -109,6 +112,9 @@ fun TeleDriveApp(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    CollectSnackbarMessages(viewModel.messages, snackbarHostState)
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -163,16 +169,25 @@ fun TeleDriveApp(
             (LocalLocaleList as ProvidableCompositionLocal<LocaleList>) provides targetLocaleList,
             LocalCompactLayout provides state.compactLayout
         ) {
-            when {
-                state.loading -> LoadingState()
-                state.locked -> LockScreen(onUnlocked = viewModel::unlock)
-                else -> MainScaffold(
-                    pendingShare = pendingShare,
-                    onboardingComplete = state.onboardingComplete,
-                    notificationDestination = notificationDestination,
-                    onDestinationHandled = onDestinationHandled,
-                    onUpdateRequested = { viewModel.checkForUpdate(force = true) },
-                    driveMissing = viewModel.driveMissing
+            Box(modifier = Modifier.fillMaxSize()) {
+                when {
+                    state.loading -> LoadingState()
+                    state.locked -> LockScreen(onUnlocked = viewModel::unlock)
+                    else -> MainScaffold(
+                        pendingShare = pendingShare,
+                        onboardingComplete = state.onboardingComplete,
+                        notificationDestination = notificationDestination,
+                        onDestinationHandled = onDestinationHandled,
+                        onUpdateRequested = { viewModel.checkForUpdate(force = true) },
+                        driveMissing = viewModel.driveMissing
+                    )
+                }
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                        .padding(bottom = BottomBarHeight)
                 )
             }
             if (sessionBroken) {

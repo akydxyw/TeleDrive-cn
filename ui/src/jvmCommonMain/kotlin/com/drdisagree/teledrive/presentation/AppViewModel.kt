@@ -12,8 +12,15 @@ import com.drdisagree.teledrive.domain.repository.ChannelRepository
 import com.drdisagree.teledrive.domain.repository.SettingsRepository
 import com.drdisagree.teledrive.domain.repository.SyncRepository
 import com.drdisagree.teledrive.domain.repository.TelegramAuthRepository
+import com.drdisagree.teledrive.presentation.common.UiText
+import com.drdisagree.teledrive.presentation.common.toUiText
+import com.drdisagree.teledrive.resources.Res
+import com.drdisagree.teledrive.resources.error_unknown
+import com.drdisagree.teledrive.resources.home_backing_up_new_files
+import com.drdisagree.teledrive.resources.home_nothing_new_to_back_up
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -31,6 +38,7 @@ import com.drdisagree.teledrive.core.update.UpdateChecker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import com.drdisagree.teledrive.core.common.AppResult
+import com.drdisagree.teledrive.data.repository.FolderChangeNotifier
 import com.drdisagree.teledrive.data.repository.LocalDataWiper
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -43,7 +51,8 @@ class AppViewModel(
     private val channelRepository: ChannelRepository,
     private val appLockManager: AppLockManager,
     private val localDataWiper: LocalDataWiper,
-    private val updateChecker: UpdateChecker
+    private val updateChecker: UpdateChecker,
+    private val folderChangeNotifier: FolderChangeNotifier
 ) : ViewModel() {
 
     private val _sessionBroken = MutableStateFlow(false)
@@ -55,8 +64,10 @@ class AppViewModel(
     private val _pendingUpdate = MutableStateFlow<AppRelease?>(null)
     val pendingUpdate: StateFlow<AppRelease?> = _pendingUpdate.asStateFlow()
 
-    private val _pendingFolderChanges = MutableStateFlow<List<FolderChange>>(emptyList())
-    val pendingFolderChanges: StateFlow<List<FolderChange>> = _pendingFolderChanges.asStateFlow()
+    private val _messages = MutableSharedFlow<UiText>(extraBufferCapacity = 4)
+    val messages: SharedFlow<UiText> = _messages.asSharedFlow()
+
+    val pendingFolderChanges: StateFlow<List<FolderChange>> = folderChangeNotifier.pending
 
     @Volatile
     private var driveReady = false
@@ -124,7 +135,7 @@ class AppViewModel(
         }
         val changes = runCatching { backupRepository.scanFolderChanges() }.getOrNull()
         if (changes is AppResult.Success && changes.value.isNotEmpty()) {
-            _pendingFolderChanges.value = changes.value
+            folderChangeNotifier.publish(changes.value)
         } else {
             catchUpBackup()
         }
@@ -132,13 +143,23 @@ class AppViewModel(
 
     fun syncFolderChanges(folderPaths: Set<String>) {
         if (folderPaths.isEmpty()) return
-        _pendingFolderChanges.value = emptyList()
-        viewModelScope.launch { backupRepository.applyFolderChanges(folderPaths) }
+        folderChangeNotifier.clear()
+        viewModelScope.launch {
+            val result = runCatching { backupRepository.applyFolderChanges(folderPaths) }.getOrNull()
+            _messages.tryEmit(
+                when {
+                    result == null -> UiText.Resource(Res.string.error_unknown)
+                    result is AppResult.Failure -> result.error.toUiText()
+                    result is AppResult.Success && result.value == null ->
+                        UiText.Resource(Res.string.home_nothing_new_to_back_up)
+
+                    else -> UiText.Resource(Res.string.home_backing_up_new_files)
+                }
+            )
+        }
     }
 
-    fun dismissFolderChanges() {
-        _pendingFolderChanges.value = emptyList()
-    }
+    fun dismissFolderChanges() = folderChangeNotifier.clear()
 
     /** Folders live with the active drive, so the check has to ask the channel. */
     private suspend fun catchUpBackup() {

@@ -13,6 +13,7 @@ import com.drdisagree.teledrive.data.local.entity.FileEntity
 import com.drdisagree.teledrive.data.local.entity.FolderEntity
 import com.drdisagree.teledrive.data.local.entity.HomeAggregates
 import com.drdisagree.teledrive.data.local.entity.LocalCopyRef
+import com.drdisagree.teledrive.data.local.entity.RemoteFileRef
 import com.drdisagree.teledrive.domain.model.BackupState
 import kotlinx.coroutines.flow.Flow
 
@@ -379,6 +380,33 @@ interface FileDao {
              AND (chatId IS :chatId OR chatId IS NULL)"""
     )
     suspend fun filesInFolder(folderId: String, chatId: Long?): List<FileEntity>
+
+    /**
+     * Remote members of a folder and everything below it. A backup folder is compared against
+     * this set to find files that only exist in the drive.
+     */
+    @Query(
+        """WITH RECURSIVE subtree(id) AS (
+               SELECT id FROM folders WHERE id = :folderId AND trashedAt IS NULL
+               UNION
+               SELECT folders.id FROM folders
+               JOIN subtree ON folders.parentId = subtree.id
+               WHERE folders.trashedAt IS NULL
+           )
+           SELECT id, name, localPath FROM files
+           WHERE folderId IN (SELECT id FROM subtree)
+             AND messageId IS NOT NULL AND trashedAt IS NULL
+             AND chatId IS :chatId"""
+    )
+    suspend fun remoteFilesInFolderTree(folderId: String, chatId: Long?): List<RemoteFileRef>
+
+    /** Local copies that already have a remote counterpart, so a scan can skip them cheaply. */
+    @Query(
+        """SELECT localPath FROM files
+           WHERE localPath IS NOT NULL AND messageId IS NOT NULL
+             AND backupState = 'BACKED_UP' AND chatId IS :chatId"""
+    )
+    suspend fun backedUpLocalPaths(chatId: Long?): List<String>
 
     @Query(
         """SELECT files.* FROM files

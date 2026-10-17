@@ -12,7 +12,7 @@ data class UserPreferences(
     val backupChargingOnly: Boolean = false,
     val backupIntervalHours: Int = 24,
     val backupMaxFileSizeMb: Int = 0,
-    val folderChangeSyncEnabled: Boolean = false,
+    val folderChangeSyncEnabled: Boolean = true,
 
     val maxCacheSizeMb: Int = 1024,
     val trashAutoClearDays: Int = 30,
